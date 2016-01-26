@@ -11,5 +11,4 @@ Usage:
 
 Limitations/Bugs.
 - Only support digital watchfaces.
-- Not support diferents font/position for decenes and units in numbers
 - Not support aditional date formats of .Net creator from xda forum

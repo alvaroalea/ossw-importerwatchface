@@ -1,15 +1,17 @@
 #!/usr/bin/python3
 # (C) 2016 Alvaro Alea Fernandez <alvaroNO_SPAMalea@gmail.com>
 # Distributed under GPL V2 License
+# Version 0.1.2 - 2016/01/25
 # check https://github.com/aleasoft/ossw-importerwatchface for lastest version
 #
 # class BinaryReader by Yony Kochinski with MIT License from
 # http://code.activestate.com/recipes/577610-decoding-binary-files/ 
 
-import sys
+import math
+import sys 
+import getopt
 import struct
 import base64
-import math
 
 class BinaryReaderEOFException(Exception):
     def __init__(self):
@@ -50,217 +52,270 @@ class BinaryReader:
     def __del__(self):
         self.file.close()
 
-# EMPIEZA EL PROGRAMA
+# funciones
 
-if len(sys.argv) > 1:
-   fname = sys.argv[1]
+def printhelp():
+    sys.stderr.write('(C) 2016 Alvaro Alea Fernandez <alvaroNO_SPAMalea@gmail.com>\n');
+    sys.stderr.write('Distributed under GPL V2 License\n')
+    sys.stderr.write('Check https://github.com/aleasoft/ossw-importerwatchface for lastest version\n')
+    sys.stderr.write('\n USAGE:\n%s  [options] binary_input_file > json_output_file\n' % sys.argv[0])
+    sys.stderr.write('\nWhere options will be:\n')
+    sys.stderr.write('\t-l --lang=es - default EN for english translations of date, or es for spanish (more to come)\n')
+    sys.stderr.write('\t-h --help       - for this help\n')
+    sys.stderr.write('\t-o --out=file  - default is standar output, use for indicate a file\n')
+    sys.stderr.write('\t-n --name=text  - default is automatically generated, use for indicate the name of watchface to show in the list of watchfaces.\n')
+
+# EMPIEZA EL PROGRAMA
+outtofile = 0
+sid = ""
+try:
+    opts, args = getopt.getopt(sys.argv[1:],"hl:o:n:",["help","lang=","out=","name="])
+except getopt.GetoptError as e:
+    sys.stderr.write(str(e))
+    sys.stderr.write('\n')
+    printhelp()
+    sys.exit(2)
+
+for opt, arg in opts:
+    if opt in ("-h","--help"):
+        printhelp()
+        sys.exit()
+    elif opt in ("-o", "--out"):
+        outfile = arg
+        outtofile = 1
+    elif opt in ("-l", "--lang"):
+        if arg == "es":
+            lang = "ES"
+        else:
+            lang == "EN"
+    elif opt in ("-n","--name"):
+        sid = arg
+
+if len(args) >= 1:
+    fname = args[0]
 else:
-   fname = 'dial.bin'
+    sys.stderr.write("No se especifico archivo, ")
+    fname = 'dial.bin'
 
 sys.stderr.write("Abriendo archivo ")
 sys.stderr.write(fname)
 sys.stderr.write("\n")
 
+#FIXME: test for error on opening.
+
+
 binaryReader = BinaryReader(fname)
 magic = binaryReader.read('uint32')
-if magic == 0x5c090b0a:
-  sys.stderr.write("Parece un watchface")
-  nid = hex(binaryReader.read('uint8'))
-  tipo = binaryReader.read('uint8')
-  
-  if len(sys.argv) > 2:
-     sid = sys.argv[2]
-  else:
-     sid = "Imported Digital ID=" + nid
-     #sid.append(nid)
+if magic != 0x5c090b0a:
+    sys.stderr.write("No es un watchface.\n")
+    sys.exit(2)
 
-  sys.stderr.write(", ID=")
-  sys.stderr.write(nid)
+sys.stderr.write("Parece un watchface")
+nid = hex(binaryReader.read('uint8'))
+tipo = binaryReader.read('uint8')
 
-  if tipo == 0x01:  
-      offbgh = binaryReader.read('uint8')
-      offfechah = binaryReader.read('uint8')
-      offnumh = binaryReader.read('uint8')
+if sid == "":
+    sid = "Imported Digital ID=" + nid
+sys.stderr.write(", ID=")
+sys.stderr.write(nid)
 
-      sys.stderr.write(" de tipo digital\n")
+if tipo != 0x01:
+    sys.stderr.write(", pero no esta soportado.\n")
+    sys.exit(2)
 
-      # PROCESAMOS EL FONDO
-      if offbgh != 0x00:
-         binaryReader.seek(offbgh)
-         bgw = binaryReader.read('uint8')
-         bgh = binaryReader.read('uint8')
-         bgx = binaryReader.read('uint8')
-         bgy = binaryReader.read('uint8')
-         offbg = binaryReader.read('bui16')
+sys.stderr.write(" de tipo digital\n")
 
-         sys.stderr.write("y con foto de fondo\n")
+offbgh = binaryReader.read('uint8')
+offfechah = binaryReader.read('uint8')
+offnumh = binaryReader.read('uint8')
 
-         bgbin= bytearray()
-         bgbin.append(0x01)
-         bgbin.append(0x00)
-         bgbin.append(bgw)
-         bgbin.append(bgh)
-         binaryReader.seek(offbg)
-         c = bgh * math.ceil( bgw / 8 )
-         while c>0:
-            bgbin.append(binaryReader.read('uint8'))
-            c = c-1
-         bgstr=base64.b64encode(bgbin)
+# PROCESAMOS EL FONDO
+if offbgh != 0x00:
+    binaryReader.seek(offbgh)
+    bgw = binaryReader.read('uint8')
+    bgh = binaryReader.read('uint8')
+    bgx = binaryReader.read('uint8')
+    bgy = binaryReader.read('uint8')
+    offbg = binaryReader.read('bui16')
 
-      # PROCESAMOS EL CALENDARIO
-      if offfechah !=0:
-          binaryReader.seek(offfechah)
-          Fformat = binaryReader.read('uint8')
-          Fu2 = binaryReader.read('uint8') # desconocido
-          Fx = binaryReader.read('uint8')
-          Fy = binaryReader.read('uint8')
-          # Fformat = 0x00 -> mes (numero) dia (numero) yo creo que el relog 106 es mentira el png tiene diethering en los numeros.
-          # Fformat = 0x01 -> semana (letra) mes (letra) dia (numero)
-          # Fformat = 0x02 -> semana (letra) dia (numero) mes (letra)
-          # Fformat = 0x03 -> mes (letra) dia (numero)  semana (letra)
-          # Fformat = 0x04 -> dia (numero) mes (letra) semana (letra)
-          # Fformat = 0x05 -> mes (letra) dia (numero) 
-          # Fformat = 0x06 -> dia (numero) mes (letra)
-          if Fformat == 0x00:
-               Fw = 14
-               Fh = 20
-               Fs = 2
-               Ft = 2
-               Fwg = 15
-               Fxg = Fx + Fw + Fs + Fw
-               Fx2 = Fx + Fw + Fs + Fw + Fwg
-          else:
-               sys.stderr.write('EL CALENDARIO AUN NO ESTA SOPORTADO\n')
+    sys.stderr.write("y con foto de fondo\n")
+
+    bgbin= bytearray()
+    bgbin.append(0x01)
+    bgbin.append(0x00)
+    bgbin.append(bgw)
+    bgbin.append(bgh)
+    binaryReader.seek(offbg)
+    c = bgh * math.ceil( bgw / 8 )
+    while c>0:
+        bgbin.append(binaryReader.read('uint8'))
+        c = c-1
+    bgstr=base64.b64encode(bgbin)
+
+# PROCESAMOS EL CALENDARIO
+if offfechah !=0:
+    binaryReader.seek(offfechah)
+    Fformat = binaryReader.read('uint8')
+    Fu2 = binaryReader.read('uint8') # desconocido
+    Fx = binaryReader.read('uint8')
+    Fy = binaryReader.read('uint8')
+    # Fformat = 0x00 -> mes (numero) dia (numero) yo creo que el relog 106 es mentira el png tiene diethering en los numeros.
+    # Fformat = 0x01 -> semana (letra) mes (letra) dia (numero)
+    # Fformat = 0x02 -> semana (letra) dia (numero) mes (letra)
+    # Fformat = 0x03 -> mes (letra) dia (numero)  semana (letra)
+    # Fformat = 0x04 -> dia (numero) mes (letra) semana (letra)
+    # Fformat = 0x05 -> mes (letra) dia (numero) 
+    # Fformat = 0x06 -> dia (numero) mes (letra)
+    if Fformat == 0x00:
+        Fw = 14
+        Fh = 20
+        Fs = 2
+        Ft = 2
+        Fwg = 15
+        Fxg = Fx + Fw + Fs + Fw
+        Fx2 = Fx + Fw + Fs + Fw + Fwg
+    else:
+        sys.stderr.write('EL CALENDARIO AUN NO ESTA SOPORTADO\n')
 
 
+if offnumh != 0:
+    binaryReader.seek(offnumh)
+    digits = [ {"offset":0,"use":1, "x":0, "y":0, "w":0, "h":0, "space":0, "range":"0-9","conv":"tens","bitmap":"", "res":"num" ,"hres":1, "pro":"hour"}, \
+               {"offset":0,"use":1, "x":0, "y":0, "w":0, "h":0, "space":0, "range":"0-9","conv":"ones","bitmap":"", "res":"num2","hres":1, "pro":"hour"}, \
+               {"offset":0,"use":1, "x":0, "y":0, "w":0, "h":0, "space":0, "range":"0-9","conv":"tens","bitmap":"", "res":"num1","hres":1, "pro":"minutes"}, \
+               {"offset":0,"use":1, "x":0, "y":0, "w":0, "h":0, "space":0, "range":"0-9","conv":"ones","bitmap":"", "res":"num3","hres":1, "pro":"minutes"} ]
+    for c in range(4):
+        digits[c]["offset"] = binaryReader.read('uint16')
+    for c in range(4):
+        digits[c]["x"] = binaryReader.read('uint8')
+        digits[c]["y"] = binaryReader.read('uint8')
+    for c in range(4):
+        digits[c]["w"] = binaryReader.read('uint8')
+        digits[c]["h"] = binaryReader.read('uint8')
 
-      # PROCESAMOS LA HORA
-      if offnumh != 0:
-          binaryReader.seek(offnumh)
-      offH1 = binaryReader.read('uint16')
-      offH2 = binaryReader.read('uint16')
-      offM1 = binaryReader.read('uint16')
-      offM2 = binaryReader.read('uint16')
-      H1x = binaryReader.read('uint8')
-      H1y = binaryReader.read('uint8')
-      H2x = binaryReader.read('uint8')
-      H2y = binaryReader.read('uint8')
-      M1x = binaryReader.read('uint8')
-      M1y = binaryReader.read('uint8')
-      M2x = binaryReader.read('uint8')
-      M2y = binaryReader.read('uint8')
-      H1w = binaryReader.read('uint8')
-      H1h = binaryReader.read('uint8')
-      H2w = binaryReader.read('uint8')
-      H2h = binaryReader.read('uint8')
-      M1w = binaryReader.read('uint8')
-      M1h = binaryReader.read('uint8')
-      M2w = binaryReader.read('uint8')
-      M2h = binaryReader.read('uint8')
+    if digits[1]["offset"] == digits[0]["offset"]:
+         digits[1]["hres"]=0
+         digits[1]["res"]=digits[0]["res"]
 
-      if offH1 != offM1:
-        hasMres = 1
-        Mresn = 'num2'
-      else:
-        hasMres = 0
-        Mresn = 'num'
-      spaceH = H2x - H1x - H1w
-      spaceM = M2x - M1x - M1w
+    if digits[2]["offset"] == digits[0]["offset"]:
+         digits[2]["hres"]=0
+         digits[2]["res"]=digits[0]["res"]
+    elif digits[2]["offset"] == digits[1]["offset"]:
+         digits[2]["hres"]=0
+         digits[2]["res"]=digits[1]["res"]
 
-      if offH1 != offH2:
-         sys.stderr.write("NUMEROS DE HORA DIFERENTES NO ESTA SOPORTADO\n")
-      if offM1 != offM2:
-         sys.stderr.write("NUMEROS DE MINUTO DIFERENTES NO ESTA SOPORTADO\n")
-      if H1y != H2y:
-         sys.stderr.write("NUMEROS DE HORA EN DIAGONAL NO ESTA SOPORTADO\n")
-      if H1y != H2y:
-         sys.stderr.write("NUMEROS DE MINUTOS EN DIAGONAL NO ESTA SOPORTADO\n")
+    if digits[3]["offset"] == digits[0]["offset"]:
+         digits[3]["hres"]=0
+         digits[3]["res"]=digits[0]["res"]
+    elif digits[3]["offset"] == digits[1]["offset"]:
+         digits[3]["hres"]=0
+         digits[3]["res"]=digits[1]["res"]
+    elif digits[3]["offset"] == digits[2]["offset"]:
+         digits[3]["hres"]=0
+         digits[3]["res"]=digits[2]["res"]
 
-      num1bin= bytearray()
-      num1bin.append(0x03)
-      num1bin.append(0x00)
-      num1bin.append(H1w)
-      num1bin.append(H2h)
-      binaryReader.seek(offH1)
-      c = H1h * math.ceil( H1w / 8 ) * 10
-      while c>0:
-         num1bin.append(binaryReader.read('uint8'))
-         c = c-1
-      num1str=base64.b64encode(num1bin)
+    for c in range(4):
+       if digits[c]["hres"]!=0:
+          num2bin= bytearray()
+          num2bin.append(0x03)
+          num2bin.append(0x00)
+          num2bin.append(digits[c]["w"])
+          num2bin.append(digits[c]["h"])
+          binaryReader.seek(digits[c]["offset"])
+          d = digits[c]["h"] * math.ceil( digits[c]["w"] / 8 ) * 10
+          while d>0:
+              num2bin.append(binaryReader.read('uint8'))
+              d = d-1
+          num2str=base64.b64encode(num2bin)
+          digits[c]["bitmap"]=num2str.decode("utf-8")
 
-      if hasMres == 1:
-         num2bin= bytearray()
-         num2bin.append(0x03)
-         num2bin.append(0x00)
-         num2bin.append(M1w)
-         num2bin.append(M1h)
-         binaryReader.seek(offM1)
-         c = M1h * math.ceil( M1w / 8 ) * 10
-         while c>0:
-            num2bin.append(binaryReader.read('uint8'))
-            c = c-1
-         num2str=base64.b64encode(num2bin)
+    if ( digits[0]["y"] == digits[1]["y"] ) and ( digits[0]["res"] == digits[1]["res"]):
+         digits[0]["space"] = digits[1]["x"] - digits[0]["x"] - digits[0]["w"]
+         digits[0]["range"]="0-99"
+         digits[1]["use"]=0
+         digits[0]["conv"]=""
+         digits[1]["conv"]=""
+        
 
+    if ( digits[2]["y"] == digits[3]["y"] ) and ( digits[2]["res"] == digits[3]["res"]):
+         digits[2]["space"] = digits[3]["x"] - digits[2]["x"] - digits[2]["w"]
+         digits[2]["range"]="0-99"
+         digits[3]["use"]=0
+         digits[2]["conv"]=""
+         digits[3]["conv"]=""
 
 
 # AHORA IMPRIMIMOS EL ARCHIVO JSON
-#sys.exit()
-print('{\n   "type": "watchset",\n   "name": "',sid,'",',sep='')
-print('   "apiVersion": 1,\n   "data": {')
-print('\t"screens": [\n\t\t{\n\t\t   "id": "watchface",\n\t\t   "controls": [')
-
-if offbgh != 0x0000:
-   print('\t\t\t{\n\t\t\t   "type": "image",')
-   print('\t\t\t   "position": {"x":',bgx,', "y":',bgy,'},')
-   print('\t\t\t   "style": {"width":',bgw,', "height":',bgh,'},')
-   print('\t\t\t   "image": {"type": "resource", "id": "bg"}\n\t\t\t},')
-
-print('\t\t\t{\n\t\t\t   "type": "number",\n\t\t\t   "numberRange": "0-99",')
-print('\t\t\t   "position": {"x": ',H1x,', "y": ',H1y,'},')
-print('\t\t\t   "style": {"type": "numbersFont", "numbersFont": {"type": "resource", "id": "num"}, "space":',spaceH,end="")
-print(', "leftPadded": true},\n\t\t\t   "source": {"type": "internal", "property": "hour"}')
-print('\t\t\t},\n\t\t\t{\n\t\t\t   "type": "number",\n\t\t\t   "numberRange": "0-99",')
-print('\t\t\t   "position": {"x":',M1x,', "y":',M1y,'},')
-print('\t\t\t   "style": {"type": "numbersFont", "numbersFont": {"type": "resource", "id": "',end="")
-print(Mresn,'"}, "space": ',spaceM,', "leftPadded": true},',sep='')
-print('\t\t\t   "source": {"type": "internal", "property": "minutes"}')
-
-if ( offfechah !=0x00 ) and ( Fformat==0x00 ):
-        print('\t\t\t},')
-        print('\t\t\t{\n\t\t\t   "type": "number",\n\t\t\t   "numberRange": "0-99",')
-        print('\t\t\t   "position": {"x":',Fx,', "y":',Fy,'},')
-        print('\t\t\t   "style": {"type": "generated", "thickness":',Ft,end="")
-        print(', "width":',Fw,', "height":',Fh,', "space":',Fs,end="")
-        print(', "leftPadded": true},\n\t\t\t   "source": {"type": "internal", "property": "month"}\n\t\t\t},')
-        
-        print('\t\t\t{\n\t\t\t   "type": "text",\n\t\t\t   "position": {"x":',Fxg,end="")
-        print(', "y": ',Fy,'},\n\t\t\t   "size": {"width": ',Fwg,', "height": ',Fh,'},')
-        print('\t\t\t   "font": {"type": "builtin", "name": "smallRegular"},')
-        print('\t\t\t   "style": {"horizontalAlign": "center", "verticalAlign": "center", "multiline": "true"},')
-        print('\t\t\t   "source": {"type": "static", "value": "-"}\n\t\t\t},')
-        
-        print('\t\t\t{\n\t\t\t   "type": "number",\n\t\t\t   "numberRange": "0-99",')
-        print('\t\t\t   "position": {"x":',Fx2,', "y":',Fy,'},')
-        print('\t\t\t   "style": {"type": "generated", "thickness": ',Ft,end="")
-        print(', "width": ',Fw,', "height": ',Fh,', "space": ',Fs,', "leftPadded": true},')
-        print('\t\t\t   "source": {"type": "internal", "property": "dayOfMonth"}')
-
-print('\t\t\t}\n\t\t   ],\n\t\t   "defaultActions": "watchface",')
-print('\t\t   "settings": {"invertible": "true"}\n\t\t}\n\t],\n\t"resources": [')
-
-# resource de BG
-if offbgh != 0x0000:
-   print('{\n"id": "bg",\n"data":"',bgstr.decode("utf-8"),'"\n},',sep='')
-
-# resource de Horas
-print('{\n"id": "num",\n"data": "',num1str.decode("utf-8"),'"\n}',sep='',end="")
-
-# resource de Minutos
-if hasMres == 1:
-   print(',\n{\n"id": "',Mresn,'",\n"data": "',num2str.decode("utf-8"),'"\n}',sep='')
+if outtofile == 0:
+    outfiler = sys.stdout
 else:
-   print()
+    outfiler= open(outfile,'w')
+
+
+outfiler.write('{0}\n   "type": "watchset",\n   "name": "{1}",'.format('{',sid))
+outfiler.write('\n   "apiVersion": 1,\n   "data": {')
+outfiler.write('\n\t"screens": [\n\t\t{\n\t\t   "id": "watchface",\n\t\t   "controls": [')
+
+coma = 0
+if offbgh != 0x0000:
+    outfiler.write('\n\t\t\t{\n\t\t\t   "type": "image",')
+    outfiler.write('\n\t\t\t   "position": {0}"x": {2}, "y": {3}{1},'.format('{','}',bgx,bgy))
+    outfiler.write('\n\t\t\t   "style": {0}"width": {2}, "height": {3}{1},'.format('{','}',bgw,bgh))
+    outfiler.write('\n\t\t\t   "image": {"type": "resource", "id": "bg"}\n\t\t\t}')
+    coma = 1
+
+# Time digits
+for c in range(4):
+    if digits[c]["use"]!=0:
+       if coma == 1:
+          outfiler.write(',')
+       outfiler.write('\n\t\t\t{0}\n\t\t\t   "type": "number",\n\t\t\t   "numberRange": "{1}",'.format('{',digits[c]["range"]))
+       outfiler.write('\n\t\t\t   "position": {0}"x": {2}, "y": {3}{1},'.format('{','}',digits[c]["x"],digits[c]["y"]))
+       outfiler.write('\n\t\t\t   "style": {"type": "numbersFont", "numbersFont": {"type": "resource", "id": "')
+       outfiler.write('{2}"{0}, "space": {3}, "leftPadded": true{1},'.format('}','}','num',digits[c]["space"]))
+       outfiler.write('\n\t\t\t   "source": {0}"type": "internal", "property": "{1}"'.format('}',digits[c]["pro"]))
+       if digits[c]["conv"]!="":
+           outfiler.write(', "converter": "{1}"{0}'.format('}',digits[c]["conv"]))
+       outfiler.write('\n\t\t\t}')
+
+# The calendar
+if ( offfechah !=0x00 ) and ( Fformat==0x00 ):
+    outfiler.write('\n\t\t\t},')
+    outfiler.write('\n\t\t\t{\n\t\t\t   "type": "number",\n\t\t\t   "numberRange": "0-99",')
+    outfiler.write('\n\t\t\t   "position": {0}"x": {2}, "y": {3}{1},'.format('{','}',Fx,Fy))
+    outfiler.write('\n\t\t\t   "style": {0}"type": "generated", "thickness": {1}'.format('{',Ft))
+    outfiler.write(', "width": {0}, "height": {1}, "space": {2}'.format(Fw,Fh,Fs))
+    outfiler.write(', "leftPadded": true},\n\t\t\t   "source": {"type": "internal", "property": "month"}\n\t\t\t},')
+    
+    outfiler.write('\n\t\t\t{0}\n\t\t\t   "type": "text",\n\t\t\t   "position": {1}"x": {2}'.format('{','{',Fxg))
+    outfiler.write(', "y": {3}{0},\n\t\t\t   "size": {1}"width": {4}, "height": {5}{2},'.format('}','{','}',Fy,Fwg,Fh))
+    outfiler.write('\n\t\t\t   "font": {"type": "builtin", "name": "smallRegular"},')
+    outfiler.write('\n\t\t\t   "style": {"horizontalAlign": "center", "verticalAlign": "center", "multiline": "true"},')
+    outfiler.write('\n\t\t\t   "source": {"type": "static", "value": "-"}\n\t\t\t},')
+    
+    outfiler.write('\n\t\t\t{\n\t\t\t   "type": "number",\n\t\t\t   "numberRange": "0-99",')
+    outfiler.write('\n\t\t\t   "position": {0}"x": {2}, "y": {3}{1},'.format('{','}',Fx2,Fy))
+    outfiler.write('\n\t\t\t   "style": {0}"type": "generated", "thickness": {1}'.format('{',Ft))
+    outfiler.write(', "width": {1}, "height": {2}, "space": {3}, "leftPadded": true{0},'.format('{',Fw,Fh,Fs))
+    outfiler.write('\n\t\t\t   "source": {"type": "internal", "property": "dayOfMonth"}')
+
+outfiler.write('\n\t\t   ],\n\t\t   "defaultActions": "watchface",')
+outfiler.write('\n\t\t   "settings": {"invertible": "true"}\n\t\t}\n\t],\n\t"resources": [')
+
+# resource of BG
+coma = 0
+if offbgh != 0x0000:
+    outfiler.write('\n{0}\n"id": "bg",\n"data":"{2}"\n{1}'.format('{','}',bgstr.decode("utf-8")))
+    coma = 1
+    
+# resources of digitos
+for c in range(4):
+    if digits[c]["hres"]!=0:
+       if coma == 1:
+          outfiler.write(',')
+       outfiler.write('\n{0}\n"id": "{2}",\n"data": "{3}"\n{1}'.format('{','}',digits[c]["res"],digits[c]["bitmap"]))
+       coma = 1
 
 # TAIL   
-print('\t]\n   }\n}')
+outfiler.write('\n\t]\n   }\n}')
 
