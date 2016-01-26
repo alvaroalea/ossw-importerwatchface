@@ -273,14 +273,16 @@ for c in range(4):
        outfiler.write('\n\t\t\t   "position": {0}"x": {2}, "y": {3}{1},'.format('{','}',digits[c]["x"],digits[c]["y"]))
        outfiler.write('\n\t\t\t   "style": {"type": "numbersFont", "numbersFont": {"type": "resource", "id": "')
        outfiler.write('{2}"{0}, "space": {3}, "leftPadded": true{1},'.format('}','}','num',digits[c]["space"]))
-       outfiler.write('\n\t\t\t   "source": {0}"type": "internal", "property": "{1}"'.format('}',digits[c]["pro"]))
+       outfiler.write('\n\t\t\t   "source": {0}"type": "internal", "property": "{1}"'.format('{',digits[c]["pro"]))
        if digits[c]["conv"]!="":
-           outfiler.write(', "converter": "{1}"{0}'.format('}',digits[c]["conv"]))
-       outfiler.write('\n\t\t\t}')
+           outfiler.write(', "converter": "{0}"'.format(digits[c]["conv"]))
+       outfiler.write('}\n\t\t\t}')
+       coma = 1
 
 # The calendar
 if ( offfechah !=0x00 ) and ( Fformat==0x00 ):
-    outfiler.write('\n\t\t\t},')
+    if coma == 1:
+        outfiler.write(',')
     outfiler.write('\n\t\t\t{\n\t\t\t   "type": "number",\n\t\t\t   "numberRange": "0-99",')
     outfiler.write('\n\t\t\t   "position": {0}"x": {2}, "y": {3}{1},'.format('{','}',Fx,Fy))
     outfiler.write('\n\t\t\t   "style": {0}"type": "generated", "thickness": {1}'.format('{',Ft))
@@ -299,6 +301,7 @@ if ( offfechah !=0x00 ) and ( Fformat==0x00 ):
     outfiler.write(', "width": {1}, "height": {2}, "space": {3}, "leftPadded": true{0},'.format('{',Fw,Fh,Fs))
     outfiler.write('\n\t\t\t   "source": {"type": "internal", "property": "dayOfMonth"}')
 
+# standar config #FIXME if no bg and no number need resources??
 outfiler.write('\n\t\t   ],\n\t\t   "defaultActions": "watchface",')
 outfiler.write('\n\t\t   "settings": {"invertible": "true"}\n\t\t}\n\t],\n\t"resources": [')
 
